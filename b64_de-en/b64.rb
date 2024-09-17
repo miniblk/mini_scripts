@@ -3,41 +3,83 @@
 require 'base64'
 require 'optparse'
 
-parser = OptionParser.new
+subtext = <<~HELP
+  Example usage:
+    ruby b64.rb --decode || --encode TEXT
+    ruby b64.rb --decode || --encode TEXT --export output.txt
+    --
+    ruby b64.rb import --decode || --encode FILENAME
+HELP
+
 opts = {}
 
-parser.on('-d', '--decode [string]') do |encoded_str|
-  opts[:decode] = true
-  opts[:result] = '' || Base64.decode64(encoded_str)
+parser = OptionParser.new
+parser.separator '╍╍╍╍'
+parser.separator subtext
+parser.separator '╍╍╍╍'
+
+parser.on('-d', '--decode TEXT', 'Decode from Base64 format') do |encoded_str|
+  puts "⮦ Decode: #{encoded_str}"
+  puts '╍╍╍╍'
+  Base64.decode64(encoded_str)
 end
 
-parser.on('-e', '--encode [string]') do |str|
-  opts[:encode] = true
-
+parser.on('-e', '--encode TEXT', 'Encode to Base64 format') do |str|
   excluded_flag = ARGV.find_index { |arg| arg.start_with?('-') }
-  content = [str, ARGV[0...excluded_flag]].join(' ') # Handle input without quotations
-  binary_data = content.encode('UTF-8').force_encoding('ASCII-8BIT')
-  opts[:result] = '' || Base64.strict_encode64(binary_data)
+  content = [str, ARGV[0...excluded_flag]].join(' ').strip # Handle input without quotations
+  binary_data = content.encode('UTF-8').force_encoding('ASCII-8BIT').strip
+
+  puts "⮦ Encode: #{content}"
+  puts '╍╍╍╍'
+  Base64.strict_encode64(binary_data)
 end
 
-parser.on('--export [file]') do |filename|
+parser.on('--export [file]', 'Export content to file') do |filename|
   filename ||= 'output.txt'
 
-  raise 'Nothing to export...' if opts[:result].nil? || opts[:result].empty?
+  raise 'Nothing to export...' unless opts.keys.any?
 
-  File.write(filename, "#{opts[:result]}\n", mode: 'a')
+  puts "Exporting to #{filename}"
+
+  File.write(filename, "#{opts.values.first}\n", mode: 'a')
 rescue RuntimeError => e
   puts e
 end
 
-parser.on('--import file') do |file|
+# Sub-command
+import = OptionParser.new(:import)
+parser.separator '╍╍╍╍'
+parser.separator subtext
+parser.separator '╍╍╍╍'
+import.on('--decode file', 'Decode file content.') do |file|
   raise "File #{file} doesn't exist" unless File.exist?(file)
 
-  File.readlines(file).each { |line| puts Base64.decode64(line) } if opts.key?(:decode)
-  File.readlines(file).each { |line| puts Base64.encode64(line) } if opts.key?(:encode)
-rescue RuntimeError => e
-  puts e
+  puts "Decoding content of [#{file}]... #{file}"
+  File.readlines(file).each do |line|
+    puts "\x1b[32m#{Base64.decode64(line)}\033[0m"
+  end
 end
 
-parser.parse!(into: opts)
-puts opts[:result]
+import.on('--encode file', 'Encode file content.') do |file|
+  raise "File #{file} doesn't exist" unless File.exist?(file)
+
+  puts "Encoding content of [#{file}]... "
+  File.readlines(file).each do |line|
+    binary_data = line.encode('UTF-8').force_encoding('ASCII-8BIT').strip
+    puts "\x1b[32m#{Base64.strict_encode64(binary_data).inspect}\033[0m"
+  end
+end
+
+subparser = { 'import' => import }
+
+command = ARGV.first
+
+ if command&.start_with?('-')
+   parser.parse!(into: opts)
+ elsif command.nil?
+   puts parser, subparser.values
+ else
+   subparser[command].parse!
+ end
+
+%i[decode encode].any? { |k| puts "\x1b[32m⮡ #{opts[k]}\033[0m" if opts.key?(k) }
